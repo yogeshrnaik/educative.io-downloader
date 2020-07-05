@@ -74,18 +74,18 @@ async function fetchLessonUrls(courseUrl: string): Promise<PageTitleAndLink[]> {
   const title = (await page.title()).replace(/[&\/\\#,+()$~%.'":*?<>{}]/g, '_');
 
   // Create downloads folder
-  if (!(await isDireectoryExists(`${ROOT_PATH}/downloads`))) {
-    await mkdir(`${ROOT_PATH}/downloads`);
+  if (!(await isDireectoryExists(`${ROOT_PATH}/downloads-${SAVE_AS}`))) {
+    await mkdir(`${ROOT_PATH}/downloads-${SAVE_AS}`);
   }
 
   console.log(`Creating course directory`);
 
   // Create course folder
-  if (!(await isDireectoryExists(`${ROOT_PATH}/downloads/${title}`))) {
-    await mkdir(`${ROOT_PATH}/downloads/${title}`);
+  if (!(await isDireectoryExists(`${ROOT_PATH}/downloads-${SAVE_AS}/${title}`))) {
+    await mkdir(`${ROOT_PATH}/downloads-${SAVE_AS}/${title}`);
   }
 
-  SAVE_DESTINATION = ROOT_PATH + '/downloads/' + title;
+  SAVE_DESTINATION = ROOT_PATH + `/downloads-${SAVE_AS}/` + title;
 
   console.log(`Looking for lessons\'s urls`);
 
