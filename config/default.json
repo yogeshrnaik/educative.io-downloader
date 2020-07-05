@@ -1,9 +1,9 @@
 {
-    "email": "example@gmail.com",
-    "password": "yourPassword",
+    "email": "YOGESHRNAIK@GMAIL.COM",
+    "password": "mypasswordhere",
     "loginCheck": true,
-    "saveAs": "html",
+    "saveAs": "pdf",
     "multiLanguage": false,
-    "courseUrl": "https://www.educative.io/courses/docker-for-developers",
-    "downloadAllCourses": false
+    "courseUrl": "https://www.educative.io/courses/grokking-the-system-design-interview",
+    "downloadAllCourses": true
 }

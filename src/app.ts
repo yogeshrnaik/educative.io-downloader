@@ -30,7 +30,9 @@ async function main(): Promise<void> {
   if (DOWNLOAD_ALL_COURSES) {
     console.log('Getting all the available courses to download...');
 
+    console.time('fetchAllCoursesAvailableToDownload');
     const courseUrlSlugList = await fetchAllCoursesAvailableToDownload(ALL_COURSES_API);
+    console.timeEnd('fetchAllCoursesAvailableToDownload');
 
     if (courseUrlSlugList.length < 1) {
       console.log('No Courses Available to download.');
@@ -41,9 +43,14 @@ async function main(): Promise<void> {
     console.log(`Found a total of ${courseUrlSlugList.length} courses to download.`);
 
     console.log(`Downloading all the available courses now.`);
+    for (const courseUrlSlug of courseUrlSlugList) {
+      console.log(COURSE_URL_PREFIX + courseUrlSlug);
+    }
 
     for (const courseUrlSlug of courseUrlSlugList) {
+      console.time(courseUrlSlug);
       await downloadCourse(COURSE_URL_PREFIX + courseUrlSlug);
+      console.timeEnd(courseUrlSlug);
     }
   } else {
     await downloadCourse(COURSE_URL);
