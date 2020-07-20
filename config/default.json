@@ -4,6 +4,7 @@
     "loginCheck": true,
     "saveAs": "pdf",
     "multiLanguage": false,
-    "courseUrl": "https://www.educative.io/courses/grokking-the-system-design-interview",
+    "courseUrl": "https://www.educative.io/courses/grokking-the-behavioral-interview",
+    "headless": true,
     "downloadAllCourses": true
 }
