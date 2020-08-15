@@ -126,16 +126,105 @@ async function downloadPage(title: string, link: string): Promise<void> {
 
     await page.addStyleTag({ content: 'div[class^="styles__PrevNextButtonWidgetStyled"], div[class^="styles__Footer"], nav { display: none !important; }' });
 
+    await page.addStyleTag({ content: 'div[class^="styles__CodeEditorStyled-sc"]{ height: 5000px !important; }' });
+    await page.addStyleTag({ content: 'div[class^="PageContent"]{ max-width: 1000px !important; }' });
     /**
      * The callback function passed to evaluate is actually executed in the browser.
      * This is why we have to pass local variables explicitly in the second parameter.
      */
     const languages = await page.evaluate(pageEvaluation, { SAVE_AS, SAVE_LESSON_AS });
 
+    //click the buttons
+    await page.evaluate(buttonClicks);
+
+    await page.evaluate(() => {
+
+      //Show Solution Code.
+      //TODO : Find some other best way to create showSolution method and use it other places.
+      //Currently the problem is when the showSolution method is passed as parameter to page evaluate it is not working as expected.
+      (<any>window).showSolution = async function showSolution() {
+
+        function waitFor(delay: number) {
+          return new Promise((resolve) => setTimeout(resolve, delay));
+        }
+
+        //Show Solution Button Click
+        try {
+
+          const showSolutionXPath = document.evaluate('//button[span[text()="Show Solution"]]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+          for (let i = 0; i < showSolutionXPath.snapshotLength; i++) {
+            const showSolutionElement = showSolutionXPath.snapshotItem(i) as HTMLElement;
+            showSolutionElement.click();
+            const noJustShowXPath = document.evaluate('//span[text()="No, just show the solution"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+            for (let j = 0; j < noJustShowXPath.snapshotLength; j++) {
+              const noJustShowElement = noJustShowXPath.snapshotItem(j) as HTMLElement;
+              noJustShowElement.click();
+              await waitFor(1000);
+            }
+          }
+
+        } catch (error) {
+          console.log("\x1b[31m", error, "\x1b[0m");
+          throw error;
+        }
+
+        const correctSolutionStyle = document.querySelectorAll('[class*="styles__Caption-sc"]');
+
+        correctSolutionStyle.forEach((item) => {
+          item.className = '';
+        });
+
+        //Monaco Content
+        try {
+          const monacoEditorContainer = document.evaluate('//div[contains(@class, "monaco-editor")]/ancestor::div[contains(@class, "styles__CodeEditorStyled")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+          //Add custom class to div surrounding. So that we can handle easily in for loop.
+          for (let i = 0; i < monacoEditorContainer.snapshotLength; i++) {
+            const addClass = monacoEditorContainer.snapshotItem(i).parentNode as HTMLElement;
+            addClass.className = 'rale' + i;
+          }
+
+          const raleDivs = document.evaluate('//div[contains(@class, "rale")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+          for (let i = 0; i < raleDivs.snapshotLength; i++) {
+
+            const linesContent = document.evaluate('//div[contains(@class, "rale' + i + '")]/descendant::div[contains(@class, "styles__CodeEditorStyled-sc")]/descendant::div[contains(@class, "lines-content")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+            const raleWithCodeEditor = document.evaluate('//div[contains(@class, "rale' + i + '")]/descendant::div[contains(@class, "styles__CodeEditorStyled-sc")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+            if (linesContent.snapshotLength > 0) {
+              let allCodeContent = "";
+
+              const textBoxContent = linesContent.snapshotItem(0) as HTMLDivElement;
+              if (textBoxContent !== null) {
+                allCodeContent += textBoxContent.innerText;
+              }
+
+              const createCodeElement = document.createElement("PRE");
+              createCodeElement.style.cssText = 'width:100%;';
+              createCodeElement.innerHTML = allCodeContent;
+
+              const parentOfWidgetMultiFiles = raleDivs.snapshotItem(i) as HTMLElement;
+              parentOfWidgetMultiFiles.appendChild(createCodeElement);
+
+              const needToRemove = raleWithCodeEditor.snapshotItem(0) as HTMLElement;
+              needToRemove.remove();
+
+            }
+          }
+
+        } catch (error) {
+          console.log("\x1b[31m\n\n", error, "\x1b[0m");
+          throw error;
+        }
+      };
+    });
+
     /**
      * If lesson has multiple language and user set multiLanguage to true then download all language.
      */
     if (languages.length > 1 && MULTI_LANGUAGE) {
+
       for (const language of languages) {
         if (!IS_DIRECTORY_CREATED[language] && !(await isDireectoryExists(`${SAVE_DESTINATION}/${language}`))) {
           // Create language dir
@@ -151,31 +240,56 @@ async function downloadPage(title: string, link: string): Promise<void> {
 
         const path = `${SAVE_DESTINATION}/${language}/${normalizedTitle}`;
 
-        await page.evaluate((language) => {
-          const languageTabs = (document.getElementsByClassName('code-container')[0]?.previousSibling?.firstChild as HTMLElement).querySelectorAll('span.desktop-only');
-          languageTabs.forEach((e) => {
-            if (e.querySelector('span').innerText === language) {
-              e.querySelector('span').click();
+        await page.evaluate(async (language) => {
+
+          const codeContainer = document.getElementsByClassName('code-container');
+          let len = codeContainer.length;
+          while (len > 0) {
+            const targetNode = codeContainer[--len].previousSibling;
+            if (targetNode?.firstChild) {
+              const languageTabs = (targetNode.firstChild as HTMLElement).querySelectorAll('span.desktop-only');
+              languageTabs.forEach((e) => {
+                if (e.querySelector('span').innerText === language) {
+                  e.querySelector('span').click();
+                }
+              });
+
+              const hideSol = document.evaluate('//button[span[text()="Hide Solution"]]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+              for (let i = 0; i < hideSol.snapshotLength; i++) {
+                const hideEle = hideSol.snapshotItem(i) as HTMLElement;
+                hideEle.click();
+              }
+
+              await waitFor(1000);
+              // Break after switching language
+              break;
             }
-          });
+          }
+
+          function waitFor(delay: number) {
+            return new Promise((resolve) => setTimeout(resolve, delay));
+          }
+
+          //invoke showSolution method.
+          const showSolution = (<any>window).showSolution;
+          await showSolution();
+
         }, language);
 
         // waiting 1 seconds just to be sure language has been changed
         await page.waitFor(1000);
+        await savePage(page, path);
 
-        if (SAVE_AS === SAVE_LESSON_AS.PDF) {
-          await savePageAsPDF(page, path);
-        } else {
-          await savePageAsMHTML(page, path);
-        }
       }
     } else {
+      await page.evaluate(async () => {
+        //invoke showSolution method.
+        const showSolution = (<any>window).showSolution;
+        await showSolution();
+      })
       const path = `${SAVE_DESTINATION}/${normalizedTitle}`;
-      if (SAVE_AS === SAVE_LESSON_AS.PDF) {
-        await savePageAsPDF(page, path);
-      } else {
-        await savePageAsMHTML(page, path);
-      }
+      await savePage(page, path);
     }
   } catch (error) {
     console.log('Failed to download ', link);
@@ -187,6 +301,83 @@ async function downloadPage(title: string, link: string): Promise<void> {
   }
 }
 
+//Before Saving check for errors.
+async function savePage(page: Page, path: string) {
+
+  await page.evaluate(async () => {
+
+    function waitFor(delay: number) {
+      return new Promise(resolve => setTimeout(resolve, delay));
+    }
+
+    await waitFor(500);
+
+    //Check Unexpected Error : Some times page throw unexpected error.
+    try {
+      let errorOccured = document.evaluate('//h2[text()="An unexpected error has occurred."]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+      if (errorOccured.snapshotLength > 0) {
+        let err = new Error('Error Occured in Page');
+        console.log("\x1b[31m\n\n", err, "\x1b[0m");
+        throw err
+      }
+    } catch (error) {
+      console.log("\x1b[31m\n\n", error, "\x1b[0m");
+      throw error;
+    }
+
+    //Check Unexpected Error : If the page is empty. Happens due to no valid login.
+    try {
+      let bdy = document.evaluate('//body', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+      let chdnodes = bdy.snapshotItem(0).childNodes;
+      if (chdnodes.length == 0) {
+        let error = new Error('Empty Page!');
+        console.log("\x1b[31m\n\n", error, "\x1b[0m");
+        throw error;
+      }
+    } catch (error) {
+      console.log("\x1b[31m\n\n", error, "\x1b[0m");
+      throw error;
+    }
+
+    //Check Unexpected Error : Suddenly Logout happens, Then we should check Login button and throw error.
+    try {
+      let noContent = document.evaluate('(//div[contains(@class, "fade-container")])[last()]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+      let loginButt = document.evaluate('//button[span[text()="LOGIN"]]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+      if (noContent.snapshotLength > 0) {
+        let fc = noContent.snapshotItem(0) as HTMLElement;
+        if (fc.childNodes.length == 0) {
+          let error = new Error('Empty Page!');
+          console.log("\x1b[31m\n\n", error, "\x1b[0m");
+          throw error;
+        }
+      }
+
+      if (loginButt.snapshotLength > 0) {
+        let fc = loginButt.snapshotItem(0) as HTMLElement;
+        if (fc.childNodes.length == 0) {
+          let error = new Error('LOGIN PAGE !');
+          console.log("\x1b[31m\n\n", error, "\x1b[0m");
+          throw error;
+        }
+      }
+
+    } catch (error) {
+      console.log("\x1b[31m\n\n", error, "\x1b[0m");
+      throw error;
+    }
+
+  });
+
+  if (SAVE_AS === SAVE_LESSON_AS.PDF) {
+    await savePageAsPDF(page, path);
+  } else {
+    await savePageAsMHTML(page, path);
+  }
+}
+
 /**
 * We perform 4 major DOM manipulation here.
 * 1. Expand all the slides.
@@ -195,12 +386,6 @@ async function downloadPage(title: string, link: string): Promise<void> {
 * 4. Extract available languages of code snippet to download them all in respective folder.
 */
 async function pageEvaluation({ SAVE_AS, SAVE_LESSON_AS }) {
-  // Expand all slides in the page
-  const xPathResult = document.evaluate('//button[contains(@class, "AnimationPlus")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-  for (let i = 0; i < xPathResult.snapshotLength; i++) {
-    const element = xPathResult.snapshotItem(i) as HTMLElement;
-    element.click();
-  }
 
   // Convert SVG image into Data URL and  also get rid of unescape characters
   const parentElements = document.getElementsByClassName('canvas-svg-viewmode');
@@ -245,15 +430,212 @@ async function pageEvaluation({ SAVE_AS, SAVE_LESSON_AS }) {
     return languages;
   }
 
-  const targetNode = codeContainer[0].previousSibling;
-  if (targetNode?.firstChild) {
-    const languageTabs = (targetNode.firstChild as HTMLElement).querySelectorAll('span.desktop-only');
-    languageTabs.forEach((e) => {
-      languages.push(e.querySelector('span').innerText);
-    });
+  let len = codeContainer.length;
+  while (len > 0) {
+    const targetNode = codeContainer[--len].previousSibling;
+    if (targetNode?.firstChild) {
+      const languageTabs = (targetNode.firstChild as HTMLElement).querySelectorAll('span.desktop-only');
+      languageTabs.forEach((e) => {
+        languages.push(e.querySelector('span').innerText);
+      });
+
+      // Break when language list found.
+      break;
+    }
   }
 
   return languages;
+}
+
+async function buttonClicks() {
+
+  //Slides :  Expand all slides in the page
+  try {
+    const xPathResult = document.evaluate('//button[contains(@class, "AnimationPlus")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+    for (let i = 0; i < xPathResult.snapshotLength; i++) {
+      const element = xPathResult.snapshotItem(i) as HTMLElement;
+      element.click();
+    }
+  } catch (error) {
+    console.log("\x1b[31m", error, "\x1b[0m");
+    throw error;
+  }
+
+  //IDECode : Click all solutions in IDE code block, copy text and append at end of the page.
+  try {
+    const codeContainerDivs = document.evaluate('//div[contains(@class, "Widget__FilesList")]/div[contains(@class, "styles__Files")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+    const widgetMultiFilesDiv = document.evaluate('//div[contains(@class, "code-container")]/div[contains(@class, "Widget__MultiFiles")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+    for (let i = 0; i < codeContainerDivs.snapshotLength; i++) {
+
+      const codeContainer = codeContainerDivs.snapshotItem(i);
+      const codeFileDiv = codeContainer.childNodes;
+      codeFileDiv.forEach((item) => {
+        const codeFileLink = item as HTMLDivElement;
+        codeFileLink.click();
+
+        const codeContent = document.evaluate('//div[contains(@class, "cmcomp-single-editor-container")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+        for (let j = 0; j < codeContent.snapshotLength; j++) {
+          if (i === j) {
+
+            let allCodeContent = "";
+            allCodeContent += '\n---------------------------------------------------------------------------------------------------\n';
+            allCodeContent += codeFileLink.innerText;
+            allCodeContent += '\n---------------------------------------------------------------------------------------------------\n\n';
+
+            const textBoxContent = codeContent.snapshotItem(j) as HTMLDivElement;
+
+            allCodeContent += textBoxContent.innerText;
+
+            setTimeout(function () {
+              textBoxContent.innerText = "All code files are copied below...";
+            }, 1);
+
+            const createCodeElement = document.createElement("PRE");
+            createCodeElement.style.cssText = 'width:100%;';
+            createCodeElement.innerHTML = allCodeContent;
+
+            const parentOfWidgetMultiFiles = widgetMultiFilesDiv.snapshotItem(i) as HTMLElement;
+            parentOfWidgetMultiFiles.appendChild(createCodeElement);
+          }
+        }
+      });
+    }
+  } catch (error) {
+    console.log("\x1b[31m", error, "\x1b[0m");
+    throw error;
+  }
+
+  //Some useful buttons inside page click.
+  const buttonsToClick = [
+    'Show Hint',
+    'Show Useful Info',
+    'Show Answer',
+    'Need Hint?',
+    'Privacy Notice',
+    'Product manager',
+    'Project manager',
+    'Software engineer',
+    'Engineering manager',
+    'Answer',
+    'Rubric',
+    'What the interviewer is listening for ',
+    'Self-assessment',
+    'Self-assesment'
+  ];
+
+  buttonsToClick.forEach((buttonText) => {
+    try {
+      const buttonTextXpath = document.evaluate('//button[span[text()="' + buttonText + '"]]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+      for (let i = 0; i < buttonTextXpath.snapshotLength; i++) {
+        const buttonTextXpathElement = buttonTextXpath.snapshotItem(i) as HTMLElement;
+        buttonTextXpathElement.click();
+      }
+    } catch (error) {
+      console.log("\x1b[31m", error, "\x1b[0m");
+      throw error;
+    }
+  });
+
+  //Show Explanation button click
+  try {
+    const buttonTextXpath = document.evaluate('//h4[text()="Show Explanation"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+    for (let i = 0; i < buttonTextXpath.snapshotLength; i++) {
+      const showSolutionElement = buttonTextXpath.snapshotItem(i) as HTMLElement;
+      showSolutionElement.click();
+    }
+  } catch (error) {
+    console.log("\x1b[31m\n\n", error, "\x1b[0m");
+    throw error;
+  }
+
+  //FOR UL Links Code.
+  try {
+
+    const codeTabLinks = document.evaluate('//div[contains(@class, "styles__ViewerComponentViewStyled")]/descendant::ul[contains(@class, "styles__TabNav")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+    //Add custom class to div surrounding. So that we can handle easily in for loop.
+    for (let i = 0; i < codeTabLinks.snapshotLength; i++) {
+      const addClass = codeTabLinks.snapshotItem(i).parentNode.parentNode as HTMLElement;
+      addClass.className = 'devd' + i;
+    }
+
+    const devdDivs = document.evaluate('//div[contains(@class, "devd")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+    for (let i = 0; i < devdDivs.snapshotLength; i++) {
+
+      const kale = document.evaluate('//div[contains(@class, "devd' + i + '")]/descendant::span[contains(@class, "styles__DesktopOnly-sc")]/descendant::span[contains(@class, "styles__TabTitle-sc")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+      for (let k = 0; k < kale.snapshotLength; k++) {
+
+        const codeFileLink = kale.snapshotItem(k) as HTMLElement;
+        codeFileLink.click();
+
+        const devdWithCodeContainer = document.evaluate('//div[contains(@class, "devd' + i + '")]/descendant::div[contains(@class, "code-container")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+
+        let allCodeContent = "";
+        allCodeContent += '\n---------------------------------------------------------------------------------------------------\n';
+        allCodeContent += codeFileLink.innerText;
+        allCodeContent += '\n---------------------------------------------------------------------------------------------------\n\n';
+
+        const textBoxContent = devdWithCodeContainer.snapshotItem(0) as HTMLDivElement;
+        allCodeContent += textBoxContent.innerText;
+
+        const createCodeElement = document.createElement("PRE");
+        createCodeElement.style.cssText = 'width:100%;';
+        createCodeElement.innerHTML = allCodeContent;
+
+        const parentOfWidgetMultiFiles = devdDivs.snapshotItem(i) as HTMLElement;
+        parentOfWidgetMultiFiles.appendChild(createCodeElement);
+
+      }
+
+      if (kale.snapshotLength > 0) {
+        const codeFileLink = kale.snapshotItem(0) as HTMLElement;
+        codeFileLink.click();
+      }
+
+    }
+  } catch (error) {
+    console.log("\x1b[31m\n\n", error, "\x1b[0m");
+    throw error;
+  }
+
+  //Quiz : Click the slide right button in Quiz and click Check answers buttons at the end.
+  try {
+    //Sometimes slideRight button doesn't vanish so we will check maxTimes in while lopp and break.
+    let maxNextSlideRightButton = 0;
+    while (true) {
+      const slideRightResult = document.evaluate('//button[contains(@class, "styles__SlideRightButton")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+      for (let i = 0; i < slideRightResult.snapshotLength; i++) {
+        const slideRightElement = slideRightResult.snapshotItem(i) as HTMLButtonElement;
+        slideRightElement.click();
+      }
+
+      if (slideRightResult.snapshotLength === 0 || maxNextSlideRightButton === 100) {
+        break;
+      }
+
+      maxNextSlideRightButton++;
+    }
+  } catch (error) {
+    console.log("\x1b[31m", error, "\x1b[0m");
+    throw error;
+  }
+
+  //Check Answers in Quiz
+  try {
+    const buttonTextXpath = document.evaluate('//button[span[text()="Check Answers"]]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+    for (let i = 0; i < buttonTextXpath.snapshotLength; i++) {
+      const buttonTextXpathElement = buttonTextXpath.snapshotItem(i) as HTMLElement;
+      buttonTextXpathElement.click();
+    }
+  } catch (error) {
+    console.log("\x1b[31m", error, "\x1b[0m");
+    throw error;
+  }
 }
 
 /**
